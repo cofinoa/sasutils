@@ -215,7 +215,7 @@ class SASDevicesCLI(object):
             try:
                 pg80 = scsi_device.attrs.vpd_pg80
                 res['sn'] = pg80[4:].decode("utf-8", errors='backslashreplace')
-            except AttributeError:
+            except (AttributeError, TypeError):
                 if scsi_device.block:
                     pg80 = vpd_get_page80_sn(scsi_device.block.name)
                     res['sn'] = pg80

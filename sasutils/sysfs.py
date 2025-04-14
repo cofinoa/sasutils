@@ -195,11 +195,7 @@ class SysfsAttributes(MutableMapping):
             try:
                 self.values[key] = sysfs.get(self.paths[key], absolute=True)
             except KeyError:
-                if default is not None:
-                    return default
-                else:
-                    raise AttributeError("%r object has no attribute %r" %
-                                         (self.__class__.__name__, key))
+                return default
 
         return self.values[key]
 
