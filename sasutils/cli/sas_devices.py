@@ -351,7 +351,7 @@ class SASDevicesCLI(object):
 
             def kfun(o):
                 if o:
-                    return int(re.sub("\D", "", o.scsi_generic.name))
+                    return int(re.sub(r"\D", "", o.scsi_generic.name))
                 else:
                     return -1
 
@@ -435,7 +435,7 @@ class SASDevicesCLI(object):
             for field in self.fields:
                 fcnt = field_trckr.get(field, 0)
                 if fcnt == 0:
-                    grp_format = re.sub('\s*\{%s.*?\}\s*' % field, ' ',
+                    grp_format = re.sub(r'\s*\{%s.*?\}\s*' % field, ' ',
                                         grp_format)
 
             if cnt > 0:
