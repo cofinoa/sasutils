@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "debugpy",
+      "request": "attach",
+      "name": "Attach to Remote Process",
+      "host": "127.0.0.1", // Replace with the remote host IP if needed
+      "port": 5678,        // Ensure this matches the port used by the remote process
+      "preLaunchTask": "Prepare Remote Debugging",
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}", // Local path to your workspace on the local machine
+          "remoteRoot": "/root/sasutils-source" // Ensure this path exists on the remote machine or create it using: mkdir -p /root/sasutils-source
+        }
+      ]
+    }
+  ],
+}
