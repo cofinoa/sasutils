@@ -4,15 +4,12 @@
     {
       "label": "Prepare Remote Debugging",
       "type": "shell",
-      "command": "ssh -L 5678:127.0.0.1:5678 root@seal",
-      "problemMatcher": [],
-      "isBackground": true,
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "echo": true, // Ensures the command is echoed in the terminal
-        "focus": true // Focuses the integrated terminal when the task runs
-      }
+      "command": "bash",
+      "args": [
+        "-c",
+        "./remote_app_manager.sh launch ${config:entryPoint}" // Use the entryPoint from launch.json
+      ],
+      "problemMatcher": []
     }
   ]
 }

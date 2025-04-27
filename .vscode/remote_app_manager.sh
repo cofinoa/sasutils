@@ -9,6 +9,8 @@ PYTHON_VERSION="python3"                # Desired Python version (e.g., python3.
 SSH_CONTROL_PATH="/tmp/test-ssh-%r@%h:%p" # Path for SSH control socket
 LOCAL_APP_DIR=".."                      # Local application directory
 
+RSYNC_OPTS="--verbose --archive --delete --prune-empty-dirs --exclude=.git --exclude=.vscode --exclude=__pycache__" # Rsync options
+
 # Function to initialize SSH multiplexed connection
 init_connections() {
   ssh -O check -S "${SSH_CONTROL_PATH}" "${REMOTE_SSH}" &> /dev/null
@@ -18,7 +20,7 @@ init_connections() {
   fi
 
   echo "Initializing SSH multiplexed connection..."
-  ssh -M -S "${SSH_CONTROL_PATH}" -f -N "${REMOTE_SSH}"
+  ssh -L5678:127.0.0.1:5678 -M -S "${SSH_CONTROL_PATH}" -f -N "${REMOTE_SSH}"
   if [ $? -eq 0 ]; then
     echo "  SSH multiplexed connection initialized successfully."
   else
@@ -60,14 +62,14 @@ deploy_application() {
   ssh -S "${SSH_CONTROL_PATH}" "${REMOTE_SSH}" "[ -d '${REMOTE_APP_DIR}' ]" &> /dev/null
   if [ $? -eq 0 ]; then
     echo " Application already deployed at ${REMOTE_APP_DIR}. Updating deployment."
-    rsync -auz --exclude '__pycache__' "${LOCAL_APP_DIR}" "${REMOTE_SSH}:${REMOTE_APP_DIR}/"
+    rsync ${RSYNC_OPTS} "${LOCAL_APP_DIR}" "${REMOTE_SSH}:${REMOTE_APP_DIR}/"
     echo " Updated application deployment successfully."
     return
   fi
 
   echo " Deploying application to remote server..."
   ssh -S "${SSH_CONTROL_PATH}" "${REMOTE_SSH}" "mkdir -p ${REMOTE_APP_DIR}"
-  rsync -auz --exclude '__pycache__' "${LOCAL_APP_DIR}" "${REMOTE_SSH}:${REMOTE_APP_DIR}/"
+  rsync ${RSYNC_OPTS} "${LOCAL_APP_DIR}" "${REMOTE_SSH}:${REMOTE_APP_DIR}/"
   if [ $? -eq 0 ]; then
     echo " Application deployed successfully to ${REMOTE_APP_DIR}."
   else
@@ -143,33 +145,53 @@ EOF
 
 # Function to launch the application with debugpy
 launch_application() {
-  
-  echo " Checking if debugpy is already running..."
-  DEBUGPY_STATUS=$(is_debugpy_running | tail -n 1)
-
-  if [[ "$DEBUGPY_STATUS" == running* ]]; then
-    echo " Debugpy is already running with PID: ${DEBUGPY_STATUS#running }"
-    echo " Please stop the existing debugpy session before launching a new one."
+  if [ -z "$1" ] || [ -z "$2" ]; then
+    echo "Error: Missing arguments for launch."
+    echo "Usage: $0 launch <debug|run> <entry_point> [optional_args...]"
     exit 1
   fi
-  
-  ENTRY_POINT="$1"
+ 
+  MODE="$1" # First argument after "launch" (debug or run)
+  ENTRY_POINT="$2" # Second argument after "launch" (entry point)
+  shift 2 # Remove "launch", mode, and entry point from the arguments
+
+  OPTIONAL_ARGS="$@" # Capture all remaining arguments as optional arguments
+
   deploy_application
 
-
-
-  echo " Launching application with debugpy on remote server..."
-  ssh -T -S "${SSH_CONTROL_PATH}" "${REMOTE_SSH}" << EOF | sed 's/^/> /'
-    set -e
-    source ${REMOTE_VENV}/bin/activate
-    echo " Starting application with debugpy..."
-    nohup ${REMOTE_VENV}/bin/python -m debugpy --listen 0.0.0.0:5678 --wait-for-client ${REMOTE_APP_DIR}/${ENTRY_POINT} > ${REMOTE_BASE_DIR}/debugpy.log 2>&1 &
-    echo \$! > ${REMOTE_BASE_DIR}/debugpy.pid
-    echo " Debugpy started with PID: \$(cat ${REMOTE_BASE_DIR}/debugpy.pid)"
-    echo " Debugpy output is being logged to: ${REMOTE_BASE_DIR}/debugpy.log"
-    tail -n 1000 --pid=\$(cat ${REMOTE_BASE_DIR}/debugpy.pid) -f ${REMOTE_BASE_DIR}/debugpy.log
-    kill \$(cat ${REMOTE_BASE_DIR}/debugpy.pid)
+  case "$MODE" in
+    "debug")
+       echo " Checking if debugpy is already running..."
+       DEBUGPY_STATUS=$(is_debugpy_running | tail -n 1)
+             if [[ "$DEBUGPY_STATUS" == running* ]]; then
+         echo " Debugpy is already running with PID: ${DEBUGPY_STATUS#running }"
+         echo " Please stop the existing debugpy session before launching a new one."
+         exit 1
+       fi
+  
+       echo " Debugging application with debugpy on remote server..."
+       ssh -L5678:127.0.0.1:5678 -T -S "${SSH_CONTROL_PATH}" "${REMOTE_SSH}" << EOF | sed 's/^//'
+         set -e
+         source ${REMOTE_VENV}/bin/activate
+         echo " Starting application with debugpy..."
+         ${REMOTE_VENV}/bin/python -m debugpy --listen 127.0.0.1:5678 --wait-for-client ${REMOTE_APP_DIR}/${ENTRY_POINT} ${OPTIONAL_ARGS}
 EOF
+      ;;
+    "run")
+       echo " Running application on remote server..."
+       ssh -L5678:127.0.0.1:5678 -T -S "${SSH_CONTROL_PATH}" "${REMOTE_SSH}" << EOF | sed 's/^//'
+         set -e
+         source ${REMOTE_VENV}/bin/activate
+         ${REMOTE_VENV}/bin/python ${REMOTE_APP_DIR}/${ENTRY_POINT} ${OPTIONAL_ARGS}
+EOF
+      ;;
+    *)
+      echo "Error: Invalid mode '$MODE'. Use 'debug' or 'run'."
+      echo "Usage: $0 <debug|run> <entry_point> [optional_args...]"
+      exit 1
+      ;;
+  esac
+
 }
 
 # Function to check the status of the deployment
@@ -256,14 +278,11 @@ case "$1" in
   "deploy")
     deploy_application
     ;;
-  "launch")
-    if [ -z "$2" ]; then
-      echo "Error: No entry point specified for debugging."
-      echo "Usage: $0 launch <entry_point>"
-      exit 1
-    fi
-    ENTRY_POINT="$2"
-    launch_application "$ENTRY_POINT"
+  "debug")
+    launch_application "$@"
+    ;;
+  "run")
+    launch_application "$@"
     ;;
   "stop")
     stop_debugpy
@@ -281,7 +300,7 @@ case "$1" in
     check_debugpy_sessions
     ;;
   *)
-    echo "Usage: $0 {init|setup|deploy|launch|stop|destroy|status|status-debugpy|check-sessions}"
+    echo "Usage: $0 {init|setup|deploy|stop|destroy|status|status-debugpy|check-sessions|<debug|run> <entry_point> [optional_args...]}"
     exit 1
     ;;
 esac

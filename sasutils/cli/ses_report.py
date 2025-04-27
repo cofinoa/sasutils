@@ -82,7 +82,16 @@ def ses_report():
         else:
             # Use Vendor + SAS address if SES encl. nickname not defined
             snic = enclosure.attrs.vendor.replace(' ', '-')
-            snic += '_' + enclosure.attrs.sas_address
+            # Fallback mechanism for missing sas_address
+            if hasattr(enclosure.attrs, 'sas_address') and enclosure.attrs.sas_address:
+                snic += '_' + enclosure.attrs.sas_address
+            else:
+                try:
+                    # Use the content of the 'id' file as the fallback
+                    snic += '_eid-' + node.get('id')
+                except KeyError:
+                    # If the 'id' file is missing, use '_unknown'
+                    snic += '_unknown'
 
         if pargs.carbon:
             if pargs.json:
