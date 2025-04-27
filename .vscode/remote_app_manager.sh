@@ -48,7 +48,7 @@ setup_venv() {
       exit 1
     fi
     echo "  Creating virtual environment at ${REMOTE_VENV}..."
-    ${PYTHON_VERSION} -m venv --upgrade-deps ${REMOTE_VENV}
+    ${PYTHON_VERSION} -m venv --upgrade ${REMOTE_VENV}
     echo "  Upgrading pip and setuptools..."
     ${REMOTE_VENV}/bin/pip install --upgrade pip setuptools debugpy
 EOF
@@ -80,9 +80,8 @@ deploy_application() {
   echo " Installing application in editable mode..."
   ssh -T -S "${SSH_CONTROL_PATH}" "${REMOTE_SSH}" << EOF | sed 's/^/> /'
     set -e
-    source ${REMOTE_VENV}/bin/activate
     echo " Installing application using pip in editable mode..."
-    pip install --editable ${REMOTE_APP_DIR}
+    ${REMOTE_VENV}/bin/pip install --editable ${REMOTE_APP_DIR}
 EOF
 
   echo " Application deployed and installed successfully."
@@ -172,7 +171,6 @@ launch_application() {
        echo " Debugging application with debugpy on remote server..."
        ssh -L5678:127.0.0.1:5678 -T -S "${SSH_CONTROL_PATH}" "${REMOTE_SSH}" << EOF | sed 's/^//'
          set -e
-         source ${REMOTE_VENV}/bin/activate
          echo " Starting application with debugpy..."
          ${REMOTE_VENV}/bin/python -m debugpy --listen 127.0.0.1:5678 --wait-for-client ${REMOTE_APP_DIR}/${ENTRY_POINT} ${OPTIONAL_ARGS}
 EOF
@@ -181,7 +179,6 @@ EOF
        echo " Running application on remote server..."
        ssh -L5678:127.0.0.1:5678 -T -S "${SSH_CONTROL_PATH}" "${REMOTE_SSH}" << EOF | sed 's/^//'
          set -e
-         source ${REMOTE_VENV}/bin/activate
          ${REMOTE_VENV}/bin/python ${REMOTE_APP_DIR}/${ENTRY_POINT} ${OPTIONAL_ARGS}
 EOF
       ;;

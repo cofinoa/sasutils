@@ -2,7 +2,7 @@ from pathlib import Path
 import pprint  # Import pprint for pretty-printing
 
 def explore_sas_topology():
-  topology = {}
+  topology = {"enclosures": {}, "block_devices": {}}
 
   enclosures_path = Path("/sys/class/enclosure")
   if enclosures_path.exists():
@@ -15,77 +15,81 @@ def explore_sas_topology():
       else:
         enclosure_id = enc_name
 
-      if enclosure_id in topology:
-        # If already exists, append enc_name to name list
-        if isinstance(topology[enclosure_id]["name"], list):
-          topology[enclosure_id]["name"].append(enc_name)
+      if enclosure_id in topology["enclosures"]:
+        if isinstance(topology["enclosures"][enclosure_id]["name"], list):
+          topology["enclosures"][enclosure_id]["name"].append(enc_name)
         else:
-          topology[enclosure_id]["name"] = [topology[enclosure_id]["name"], enc_name]
+          topology["enclosures"][enclosure_id]["name"] = [topology["enclosures"][enclosure_id]["name"], enc_name]
 
-        if isinstance(topology[enclosure_id]["path"], list):
-          topology[enclosure_id]["path"].append(str(enc.resolve()))
+        if isinstance(topology["enclosures"][enclosure_id]["sys_path"], list):
+          topology["enclosures"][enclosure_id]["sys_path"].append(str(enc.resolve()))
         else:
-          topology[enclosure_id]["path"] = [topology[enclosure_id]["path"], str(enc.resolve())]
+          topology["enclosures"][enclosure_id]["sys_path"] = [topology["enclosures"][enclosure_id]["sys_path"], str(enc.resolve())]
       else:
-        topology[enclosure_id] = {
+        topology["enclosures"][enclosure_id] = {
           "name": enc_name,
           "components": None,
           "slots": {},
-          "path": str(enc.resolve()),
+          "sys_path": str(enc.resolve()),
         }
 
-        components_file = enc / "components"
-        if components_file.exists():
-          topology[enclosure_id]["components"] = int(components_file.read_text().strip())
-  
-        for enc_subdir in enc.iterdir():
-          slot_file = enc_subdir / "slot"
-          if slot_file.exists():
-            try:
-              slot_num = int(slot_file.read_text().strip())
-              device_dir = enc_subdir / "device"
-  
-              slot_status_file = enc_subdir / "status"
-              slot_status = slot_status_file.read_text().strip() if slot_status_file.exists() else None
-  
-              slot_locate_file = enc_subdir / "locate"
-              slot_locate = slot_locate_file.read_text().strip() if slot_locate_file.exists() else None
-  
-              slot_fault_file = enc_subdir / "fault"
-              slot_fault = slot_fault_file.read_text().strip() if slot_fault_file.exists() else None
-  
-              topology[enclosure_id]["slots"][slot_num] = {
-                "name": enc_subdir.name,
-                "status": slot_status,
-                "device": device_dir.exists(),
-                "locate": slot_locate,
-                "fault": slot_fault,
-              }
-            except Exception as e:
-              print(f"Error reading {device_dir}: {e}")
+      components_file = enc / "components"
+      if components_file.exists():
+        topology["enclosures"][enclosure_id]["components"] = int(components_file.read_text().strip())
 
-  expanders_path = Path("/sys/class/sas_expander")
-  expanders = {}
-  if expanders_path.exists():
-    for exp in expanders_path.glob("*[0-9]"):
-      exp_name = exp.name
-      ports = []
-      try:
-        for port_dir in (exp / "device" / "port").glob("*"):
+      for enc_subdir in enc.iterdir():
+        slot_file = enc_subdir / "slot"
+        if slot_file.exists():
           try:
-            attached_sas_addr_file = port_dir / "attached_sas_address"
-            if attached_sas_addr_file.exists():
-              attached_addr = attached_sas_addr_file.read_text().strip()
-              ports.append(attached_addr)
-          except Exception:
-            continue
-      except Exception:
-        continue
-      expanders[exp_name] = ports
+            slot_num = int(slot_file.read_text().strip())
+            device_dir = enc_subdir / "device"
 
-  return {"enclosures": topology}
+            slot_status_file = enc_subdir / "status"
+            slot_status = slot_status_file.read_text().strip() if slot_status_file.exists() else None
+
+            slot_locate_file = enc_subdir / "locate"
+            slot_locate = slot_locate_file.read_text().strip() if slot_locate_file.exists() else None
+
+            slot_fault_file = enc_subdir / "fault"
+            slot_fault = slot_fault_file.read_text().strip() if slot_fault_file.exists() else None
+
+            topology["enclosures"][enclosure_id]["slots"][slot_num] = {
+              "name": enc_subdir.name,
+              "status": slot_status,
+              "device": device_dir.exists(),
+              "locate": slot_locate,
+              "fault": slot_fault,
+            }
+          except Exception as e:
+            print(f"Error reading {device_dir}: {e}")
+
+  # Discover block devices
+  block_path = Path("/sys/block")
+  if block_path.exists():
+    for dev in block_path.glob("*"):
+      if dev.is_symlink() or dev.is_dir():
+        dev_name = dev.name
+        dev_sys_path = dev.resolve()
+        device_info = {
+          "sys_path": str(dev_sys_path)
+        }
+
+        vendor_file = dev_sys_path / "device/vendor"
+        model_file = dev_sys_path / "device/model"
+        serial_file = dev_sys_path / "device/serial"
+
+        if vendor_file.exists():
+          device_info["vendor"] = vendor_file.read_text().strip()
+        if model_file.exists():
+          device_info["model"] = model_file.read_text().strip()
+        if serial_file.exists():
+          device_info["serial"] = serial_file.read_text().strip()
+
+        topology["block_devices"][dev_name] = device_info
+
+  return topology
 
 if __name__ == "__main__":
   data = explore_sas_topology()
-  pp = pprint.PrettyPrinter(width=120, compact=True, sort_dicts=True)
+  pp = pprint.PrettyPrinter(width=120, compact=True)
   pp.pprint((data))
